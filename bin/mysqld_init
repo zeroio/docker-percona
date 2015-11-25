@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+##Copied from tumtum/mysql init script
+set -m -e
+
+VOLUME_HOME="/var/lib/mysql"
+CONF_FILE="/etc/mysql/conf.d/my.cnf"
+
+PrepReplConf() {
+	echo "Checking and preparing replication configuration files ..."
+	if [ ${REPLICATION_MASTER} == "**False**" ]; then
+		unset REPLICATION_MASTER
+	fi
+
+	if [ ${REPLICATION_SLAVE} == "**False**" ]; then
+		unset REPLICATION_SLAVE
+	fi
+	# Set MySQL REPLICATION - MASTER
+	if [ -n "${REPLICATION_MASTER}" ]; then
+		echo "Configuring as master node 1/2"
+		RAND="$(date +%s | rev | cut -c 1-2)$(echo ${RANDOM})"
+		echo "Writting configuration file '${CONF_FILE}' with server-id=${RAND}"
+		sed -i "s/^#server-id.*/server-id = ${RAND}/" ${CONF_FILE}
+		sed -i "s/^#log-bin.*/log-bin = mysql-bin/" ${CONF_FILE}
+	# Set MySQL REPLICATION - SLAVE
+	elif [ -n "${REPLICATION_SLAVE}" ]; then
+		echo "Configuring as a slave node 1/2"
+		MASTER_ADDR=${REPLICATION_MASTER}_3306_TCP_ADDR
+		if [ -n "${MASTER_ADDR}" ]; then
+			RAND="$(date +%s | rev | cut -c 1-2)$(echo ${RANDOM})"
+			echo "=> Writting configuration file '${CONF_FILE}' with server-id=${RAND}"
+			sed -i "s/^#server-id.*/server-id = ${RAND}/" ${CONF_FILE}
+			sed -i "s/^#log-bin.*/log-bin = mysql-bin/" ${CONF_FILE}
+		else
+			echo "Cannot configure slave, please link it to another MySQL container with alias specified in REPLICATION_MASTER environment variable"
+			exit 1
+		fi
+	fi
+}
+
+CreateUser()
+{
+	echo "Creating power user ..."
+	if [ "$DB_PASS" = "**Random**" ]; then
+		unset DB_PASS
+	fi
+	PASS=${DB_PASS:-$(pwgen -s 12 1)}
+	_word=$( [ ${DB_PASS} ] && echo "preset" || echo "random" )
+	echo "Creating user [${DB_USER}] with [${PASS}] password"
+	mysql -uroot -e "CREATE USER '${DB_USER}'@'%' IDENTIFIED BY '$PASS'"
+	mysql -uroot -e "GRANT ALL PRIVILEGES ON *.* TO '${DB_USER}'@'%' WITH GRANT OPTION"
+	echo "User created."
+}
+
+CreateDB()
+{
+	if [ "$CREATE_DB" = "**False**" ]; then
+	    unset CREATE_DB
+	else
+		echo "Creating database ${CREATE_DB}"
+		mysql -uroot -e "CREATE DATABASE IF NOT EXISTS ${CREATE_DB};"
+		echo "Database created."
+	fi
+}
+
+ImportSql()
+{
+	for FILE in ${INIT_SQL}; do
+		echo "Importing SQL file ${FILE}"
+		if [ "$CREATE_DB" ]; then
+			mysql -uroot "$CREATE_DB" < "${FILE}"
+		else
+			mysql -uroot < "${FILE}"
+		fi
+	done
+}
+
+CreateReplUser()
+{
+	echo "Checking and preparing replication user ..."
+	# Set MySQL REPLICATION - MASTER
+	if [ -n "${REPLICATION_MASTER}" ]; then
+		echo "Configuring as master node 2/2"
+		mysql -uroot -e "CREATE USER '${REPLICATION_USER}'@'%' IDENTIFIED BY '${REPLICATION_PASS}'"
+		mysql -uroot -e "GRANT REPLICATION SLAVE ON *.* TO '${REPLICATION_USER}'@'%'"
+		mysql -uroot -e "reset master"
+	# Set MySQL REPLICATION - SLAVE
+	elif [ -n "${REPLICATION_SLAVE}" ]; then
+		echo "Configuring as a slave node 2/2"
+		MASTER_ADDR=${REPLICATION_MASTER}_3306_TCP_ADDR
+		MASTER_PORT=${REPLICATION_MASTER}_3306_TCP_PORT
+		MASTER_USER=${REPLICATION_MASTER}_ENV_REPLICATION_USER
+		MASTER_PASS=${REPLICATION_MASTER}_ENV_REPLICATION_PASS
+        mysql -uroot -e "CHANGE MASTER TO MASTER_HOST='${MASTER_ADDR}',MASTER_USER='${MASTER_USER}',MASTER_PASSWORD='${MASTER_PASS}',MASTER_PORT=${MASTER_PORT}, MASTER_CONNECT_RETRY=30"
+        mysql -uroot -e "start slave"
+	fi
+}
+
+InstallDB() {
+	echo "Checking and installing database ..."
+	if [ ! -d "${VOLUME_HOME}/mysql" ]; then
+		echo "Empty $VOLUME_HOME/mysql. Start installing ..."
+		chown mysql:mysql /var/lib/mysql
+		if [ ! -f /usr/share/mysql/my-default.cnf ] ; then
+			cp /etc/mysql/my.cnf /usr/share/mysql/my-default.cnf
+		fi
+		mysql_install_db || exit 1
+		echo "Installing done"
+		mysqld_safe ${EXTRA_OPTS} &
+		mysqladmin --silent --wait=30 ping || exit 1
+		mysql -e "DELETE FROM mysql.user WHERE User = '';"
+		mysql -e "DROP DATABASE test;"
+		PrepReplConf
+		CreateUser
+		CreateDB
+		ImportSql
+		CreateReplUser
+		#Shutdown to start again later so Docker can monitor
+		mysqladmin shutdown
+	else
+		echo "Using an existing volume"
+	fi
+}
+
+InstallDB
+exec mysqld_safe ${EXTRA_OPTS}
+
+

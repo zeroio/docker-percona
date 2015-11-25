@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+now=$(date +"%Y%m%d")
+innobackupex --user root --stream=tar --no-timestamp /backups | gzip > /backups/${now}.tar.gz
