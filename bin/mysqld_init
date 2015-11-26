@@ -65,12 +65,12 @@ CreateDB()
 
 ImportSql()
 {
-	for FILE in ${INIT_SQL}; do
+	for FILE in $(ls ${INIT_SQL}); do
 		echo "Importing SQL file ${FILE}"
 		if [ "$CREATE_DB" ]; then
-			mysql -uroot "$CREATE_DB" < "${FILE}"
+			mysql -uroot "$CREATE_DB" < "${INIT_SQL}/${FILE}"
 		else
-			mysql -uroot < "${FILE}"
+			mysql -uroot < "${INIT_SQL}/${FILE}"
 		fi
 	done
 }
