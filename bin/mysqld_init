@@ -65,14 +65,17 @@ CreateDB()
 
 ImportSql()
 {
-	for FILE in $(ls ${INIT_SQL}); do
-		echo "Importing SQL file ${FILE}"
-		if [ "$CREATE_DB" ]; then
-			mysql -uroot "$CREATE_DB" < "${INIT_SQL}/${FILE}"
-		else
-			mysql -uroot < "${INIT_SQL}/${FILE}"
-		fi
-	done
+	if [ -d "$INIT_SQL" ]; then
+		for FILE in $(ls ${INIT_SQL}); do
+			echo "Importing SQL file ${FILE}"
+			if [ "$CREATE_DB" ]; then
+				mysql -uroot "$CREATE_DB" < "${INIT_SQL}/${FILE}"
+			else
+				mysql -uroot < "${INIT_SQL}/${FILE}"
+			fi
+		done
+
+	fi
 }
 
 CreateReplUser()
@@ -124,5 +127,3 @@ InstallDB() {
 
 InstallDB
 exec mysqld_safe ${EXTRA_OPTS}
-
-

@@ -14,7 +14,7 @@ ENV DB_USER=admin \
 RUN apt-key adv --keyserver ha.pool.sks-keyservers.net --recv-keys 430BDF5C56E7C94E848EE60C1C4CBDCDCD2EFD2A && \
 	echo "deb http://repo.percona.com/apt `lsb_release -cs` main" > /etc/apt/sources.list.d/percona.list && \
 	apt-get update && \
-	DEBIAN_FRONTEND=noninteractive apt-get install -yq percona-server-server-5.6 percona-server-client-5.6 percona-toolkit percona-xtrabackup qpress pwgen && \
+	DEBIAN_FRONTEND=noninteractive apt-get install -yq percona-server-server-5.7 percona-server-client-5.7 percona-toolkit percona-xtrabackup qpress pwgen && \
 	rm -rf /var/lib/mysql/*
 
 VOLUME ["/etc/mysql", "/var/lib/mysql", "/backups"]
